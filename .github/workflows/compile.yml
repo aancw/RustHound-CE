@@ -34,37 +34,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---------------------
-      # Install GSSAPI/Kerberos
-      # ---------------------
+
+      #######################################################################
+      # LINUX DEPENDENCIES (Ubuntu 24.04)
+      #######################################################################
       - name: Install Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libkrb5-dev heimdal-dev pkg-config
+          sudo apt-get -y update
+          sudo apt-get -y install \
+            gcc \
+            clang \
+            libclang-dev \
+            libgssapi-krb5-2 \
+            libkrb5-dev \
+            libsasl2-modules-gssapi-mit \
+            musl-tools \
+            gcc-mingw-w64-x86-64 \
+            pkg-config
 
-      - name: Install Dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew update
-          brew install heimdal
 
+      #######################################################################
+      # WINDOWS DEPENDENCIES
+      #######################################################################
       - name: Install Dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # Install LLVM for clang
+          winget install LLVM -e --silent
+
+          # Install MIT Kerberos for Windows
           $url = "https://web.mit.edu/kerberos/dist/kfw/4.1/kfw-4.1.1-amd64.msi"
           Invoke-WebRequest $url -OutFile "kfw.msi"
-          Start-Process msiexec.exe -ArgumentList "/i kfw.msi /qn" -NoNewWindow -Wait
-          
-          # set environment vars for build
-          echo "KERB_ROOT=C:\Program Files\MIT\Kerberos" >> $env:GITHUB_ENV
-          echo "INCLUDE=${env:KERB_ROOT}\include" >> $env:GITHUB_ENV
-          echo "LIB=${env:KERB_ROOT}\lib" >> $env:GITHUB_ENV
+          Start-Process msiexec.exe -ArgumentList "/i kfw.msi /qn" -Wait
 
-      # ---------------------
-      # Build
-      # ---------------------
+          # Set environment paths for Clang and Kerberos
+          echo "KERB_ROOT=C:\Program Files\MIT\Kerberos" >> $env:GITHUB_ENV
+          echo "INCLUDE=C:\Program Files\MIT\Kerberos\include" >> $env:GITHUB_ENV
+          echo "LIB=C:\Program Files\MIT\Kerberos\lib" >> $env:GITHUB_ENV
+
+
+      #######################################################################
+      # MACOS DEPENDENCIES
+      #######################################################################
+      - name: Install Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install \
+            llvm \
+            heimdal
+
+
+      #######################################################################
+      # BUILD
+      #######################################################################
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v1
         with:
@@ -73,9 +98,10 @@ jobs:
           args: "--locked --release"
           strip: true
 
-      # ---------------------
-      # Release
-      # ---------------------
+
+      #######################################################################
+      # RELEASE
+      #######################################################################
       - name: Publish artifacts and release
         uses: houseabsolute/actions-rust-release@v0
         with:
