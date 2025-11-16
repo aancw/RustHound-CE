@@ -5,40 +5,66 @@ on:
   push:
     tags:
       - "v*"
-      
+
 jobs:
   release:
     name: Release - ${{ matrix.platform.os-name }}
     strategy:
       matrix:
         platform:
-
           - os-name: Linux-x86_64
             runs-on: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-
           - os-name: Linux-aarch64
             runs-on: ubuntu-24.04
             target: aarch64-unknown-linux-musl
-
           - os-name: Windows-x86_64
             runs-on: windows-latest
             target: x86_64-pc-windows-msvc
-
           - os-name: macOS-x86_64
             runs-on: macOS-latest
             target: x86_64-apple-darwin
-          
           - os-name: macOS-aarch64
             runs-on: macOS-latest
             target: aarch64-apple-darwin
 
-          # more targets here ...
-
     runs-on: ${{ matrix.platform.runs-on }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ---------------------
+      # Install GSSAPI/Kerberos
+      # ---------------------
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libkrb5-dev heimdal-dev pkg-config
+
+      - name: Install Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install heimdal
+
+      - name: Install Dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = "https://web.mit.edu/kerberos/dist/kfw/4.1/kfw-4.1.1-amd64.msi"
+          Invoke-WebRequest $url -OutFile "kfw.msi"
+          Start-Process msiexec.exe -ArgumentList "/i kfw.msi /qn" -NoNewWindow -Wait
+          
+          # set environment vars for build
+          echo "KERB_ROOT=C:\Program Files\MIT\Kerberos" >> $env:GITHUB_ENV
+          echo "INCLUDE=${env:KERB_ROOT}\include" >> $env:GITHUB_ENV
+          echo "LIB=${env:KERB_ROOT}\lib" >> $env:GITHUB_ENV
+
+      # ---------------------
+      # Build
+      # ---------------------
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v1
         with:
@@ -46,6 +72,10 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: "--locked --release"
           strip: true
+
+      # ---------------------
+      # Release
+      # ---------------------
       - name: Publish artifacts and release
         uses: houseabsolute/actions-rust-release@v0
         with:
